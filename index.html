@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dorm Walkthrough – Doors</title>
+<style>
+body { margin: 0; overflow: hidden; font-family: sans-serif; }
+#hint {
+  position: fixed; bottom: 10px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  color: white; padding: 8px 14px;
+  border-radius: 8px;
+}
+#startOverlay {
+  position: fixed; top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.85);
+  color:white; display:flex; justify-content:center; align-items:center;
+  font-size: 24px; cursor:pointer;
+  z-index: 10;
+}
+</style>
+</head>
+<body>
+<div id="startOverlay">Click to Start</div>
+<div id="hint">WASD / Arrow Keys • Mouse look</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+// Scene setup
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf0f0f0);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(30,50,20);
+scene.add(sun);
+
+// Controls
+const controls = new THREE.PointerLockControls(camera, document.body);
+document.getElementById('startOverlay').addEventListener('click', () => {
+    controls.lock();
+});
+controls.addEventListener('lock', () => {
+    document.getElementById('startOverlay').style.display = 'none';
+});
+controls.addEventListener('unlock', () => {
+    document.getElementById('startOverlay').style.display = 'flex';
+});
+scene.add(controls.getObject());
+
+// Movement
+const keys = {};
+document.addEventListener('keydown', e => keys[e.code] = true);
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+// Materials
+const wallMat = new THREE.MeshStandardMaterial({color: 0xffffff});
+const floorMat = new THREE.MeshStandardMaterial({color: 0xdddddd});
+const doorMat = new THREE.MeshStandardMaterial({color: 0xb89b7b});
+
+// Colliders
+const colliders = [];
+function solid(w,h,d,x,y,z,mat,collide=true){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    m.position.set(x,y,z);
+    scene.add(m);
+    if(collide) colliders.push(m);
+    return m;
+}
+
+// Floors
+solid(70,1,40,0,0,0,floorMat);
+solid(70,1,40,0,8,0,floorMat);
+solid(70,1,40,0,16,0,floorMat);
+
+// Walls
+solid(70,12,1,0,6,-20,wallMat);
+solid(70,12,1,0,6,20,wallMat);
+solid(1,12,40,-35,6,0,wallMat);
+solid(1,12,40,35,6,0,wallMat);
+
+// Doors
+const doors = [];
+function door(x,y,z){
+    const pivot = new THREE.Object3D();
+    pivot.position.set(x,y,z);
+    scene.add(pivot);
+
+    const d = new THREE.Mesh(new THREE.BoxGeometry(1,6,0.2), doorMat);
+    d.position.x = 0.5;
+    pivot.add(d);
+
+    doors.push({pivot, open:false});
+    return pivot;
+}
+
+// Hallway
+solid(50,6,6,0,11,0,wallMat);
+
+// Bedrooms + doors
+function bedroom(x,z,y){
+    solid(8,6,8,x,y+3,z,wallMat);
+    door(x,y+3,z-4);
+}
+[-1,1].forEach(s=>{
+    bedroom(-14,s*9,8);
+    bedroom(14,s*9,8);
+});
+
+// Bathrooms
+solid(10,6,8,-20,3,10,wallMat);
+solid(10,6,8,-20,3,-10,wallMat);
+door(-15,3,14);
+door(-15,3,-6);
+
+// Stairs
+for(let i=0;i<8;i++)
+    solid(6,1,4,22,i+1,i*1.2-4,floorMat);
+
+// Attic door
+door(0,11,12);
+
+// Attic rooms
+solid(8,6,8,-12,19,0,wallMat);
+solid(8,6,8,12,19,0,wallMat);
+
+// Start camera
+camera.position.set(0,2,15);
+
+// Collision check
+function blocked(p){
+    for(const c of colliders){
+        const b = new THREE.Box3().setFromObject(c);
+        if(b.containsPoint(p)) return true;
+    }
+    return false;
+}
+
+// Animate
+function animate(){
+    requestAnimationFrame(animate);
+    const sp = 0.15;
+    const prev = controls.getObject().position.clone();
+
+    if(keys.KeyW||keys.ArrowUp) controls.moveForward(sp);
+    if(keys.KeyS||keys.ArrowDown) controls.moveForward(-sp);
+    if(keys.KeyA||keys.ArrowLeft) controls.moveRight(-sp);
+    if(keys.KeyD||keys.ArrowRight) controls.moveRight(sp);
+
+    if(blocked(controls.getObject().position))
+        controls.getObject().position.copy(prev);
+
+    // Door animation
+    doors.forEach(d=>{
+        const dist = d.pivot.position.distanceTo(camera.position);
+        const target = dist<3 ? -Math.PI/2 : 0;
+        d.pivot.rotation.y += (target - d.pivot.rotation.y)*0.1;
+    });
+
+    renderer.render(scene, camera);
+}
+animate();
+
+// Handle window resize
+window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
